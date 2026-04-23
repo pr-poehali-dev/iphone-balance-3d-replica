@@ -10,6 +10,11 @@ interface Platform {
   type: 'wood' | 'stone' | 'brick';
 }
 
+interface Rail {
+  x1: number; y1: number; x2: number; y2: number;
+  cx?: number; cy?: number;
+}
+
 interface Bonus {
   x: number; y: number; collected: boolean; phase: number;
 }
@@ -21,6 +26,7 @@ interface Particle {
 
 interface LevelData {
   platforms: Platform[];
+  rails?: Rail[];
   bonuses: { x: number; y: number }[];
   goal: { x: number; y: number };
   skyTop: string; skyBottom: string;
@@ -37,12 +43,17 @@ const LEVELS: LevelData[] = [
     goal: { x: 780, y: 160 },
     platforms: [
       { x: 20, y: 440, w: 240, h: 28, type: 'wood' },
-      { x: 320, y: 400, w: 180, h: 28, type: 'stone' },
-      { x: 560, y: 340, w: 160, h: 28, type: 'wood' },
+      { x: 320, y: 400, w: 60, h: 28, type: 'stone' },
+      { x: 560, y: 340, w: 60, h: 28, type: 'wood' },
       { x: 760, y: 260, w: 120, h: 28, type: 'brick' },
       { x: 620, y: 200, w: 140, h: 28, type: 'stone' },
     ],
-    bonuses: [{ x: 380, y: 360 }, { x: 620, y: 300 }, { x: 700, y: 160 }],
+    rails: [
+      { x1: 260, y1: 440, x2: 320, y2: 400, cx: 290, cy: 440 },
+      { x1: 380, y1: 400, x2: 560, y2: 340, cx: 470, cy: 400 },
+      { x1: 620, y1: 340, x2: 760, y2: 260, cx: 690, cy: 340 },
+    ],
+    bonuses: [{ x: 470, y: 360 }, { x: 690, y: 290 }, { x: 700, y: 160 }],
   },
   {
     name: 'ОБЛАКА',
@@ -179,6 +190,7 @@ export default function Index() {
   const stateRef = useRef({
     ball: { x: 60, y: 380, vx: 0, vy: 0, r: 16, rot: 0, material: 'wood' as 'wood' | 'stone' | 'paper', onGround: false },
     platforms: [] as Platform[],
+    rails: [] as Rail[],
     bonuses: [] as Bonus[],
     particles: [] as Particle[],
     keys: {} as Record<string, boolean>,
@@ -215,6 +227,7 @@ export default function Index() {
     const firstPlat = lvl.platforms[0];
     s.ball = { x: firstPlat.x + 20, y: firstPlat.y - 20, vx: 0, vy: 0, r: 16, rot: 0, material: 'wood', onGround: false };
     s.platforms = lvl.platforms.map(p => ({ ...p }));
+    s.rails = (lvl.rails || []).map(r => ({ ...r }));
     s.bonuses = lvl.bonuses.map(b => ({ ...b, collected: false, phase: Math.random() * Math.PI * 2 }));
     s.particles = [];
     s.camX = 0; s.camY = 0;
@@ -434,6 +447,114 @@ export default function Index() {
       ctx.stroke();
     };
 
+    const railPoint = (r: Rail, t: number) => {
+      if (r.cx !== undefined && r.cy !== undefined) {
+        const u = 1 - t;
+        return {
+          x: u * u * r.x1 + 2 * u * t * r.cx + t * t * r.x2,
+          y: u * u * r.y1 + 2 * u * t * r.cy + t * t * r.y2,
+        };
+      }
+      return { x: r.x1 + (r.x2 - r.x1) * t, y: r.y1 + (r.y2 - r.y1) * t };
+    };
+
+    const drawRail = (r: Rail) => {
+      // Support posts (vertical poles to ground)
+      ctx.strokeStyle = '#5a5a5a';
+      ctx.lineWidth = 2;
+      const startPost = railPoint(r, 0);
+      const endPost = railPoint(r, 1);
+      [startPost, endPost].forEach(pt => {
+        ctx.beginPath();
+        ctx.moveTo(pt.x, pt.y);
+        ctx.lineTo(pt.x, pt.y + 12);
+        ctx.stroke();
+      });
+
+      // Shadow of rail
+      ctx.strokeStyle = 'rgba(0,0,0,0.25)';
+      ctx.lineWidth = 6;
+      ctx.lineCap = 'round';
+      ctx.beginPath();
+      ctx.moveTo(r.x1 + 2, r.y1 + 4);
+      if (r.cx !== undefined && r.cy !== undefined) {
+        ctx.quadraticCurveTo(r.cx + 2, r.cy + 4, r.x2 + 2, r.y2 + 4);
+      } else {
+        ctx.lineTo(r.x2 + 2, r.y2 + 4);
+      }
+      ctx.stroke();
+
+      // Dark base of rail
+      ctx.strokeStyle = '#3a3a3a';
+      ctx.lineWidth = 7;
+      ctx.beginPath();
+      ctx.moveTo(r.x1, r.y1);
+      if (r.cx !== undefined && r.cy !== undefined) {
+        ctx.quadraticCurveTo(r.cx, r.cy, r.x2, r.y2);
+      } else {
+        ctx.lineTo(r.x2, r.y2);
+      }
+      ctx.stroke();
+
+      // Metallic main rail
+      ctx.strokeStyle = '#c8ccd0';
+      ctx.lineWidth = 5;
+      ctx.beginPath();
+      ctx.moveTo(r.x1, r.y1);
+      if (r.cx !== undefined && r.cy !== undefined) {
+        ctx.quadraticCurveTo(r.cx, r.cy, r.x2, r.y2);
+      } else {
+        ctx.lineTo(r.x2, r.y2);
+      }
+      ctx.stroke();
+
+      // Highlight on rail
+      ctx.strokeStyle = 'rgba(255,255,255,0.7)';
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.moveTo(r.x1, r.y1 - 1);
+      if (r.cx !== undefined && r.cy !== undefined) {
+        ctx.quadraticCurveTo(r.cx, r.cy - 1, r.x2, r.y2 - 1);
+      } else {
+        ctx.lineTo(r.x2, r.y2 - 1);
+      }
+      ctx.stroke();
+      ctx.lineCap = 'butt';
+
+      // End caps
+      [railPoint(r, 0), railPoint(r, 1)].forEach(pt => {
+        const gr = ctx.createRadialGradient(pt.x - 1, pt.y - 1, 0, pt.x, pt.y, 5);
+        gr.addColorStop(0, '#f0f0f0');
+        gr.addColorStop(1, '#606060');
+        ctx.fillStyle = gr;
+        ctx.beginPath();
+        ctx.arc(pt.x, pt.y, 4, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.strokeStyle = '#2a2a2a';
+        ctx.lineWidth = 1;
+        ctx.stroke();
+      });
+    };
+
+    const distToRail = (r: Rail, px: number, py: number) => {
+      // Sample curve, find closest point
+      let best = { d: Infinity, x: 0, y: 0, t: 0, nx: 0, ny: 0 };
+      const steps = 20;
+      for (let i = 0; i <= steps; i++) {
+        const t = i / steps;
+        const pt = railPoint(r, t);
+        const dx = px - pt.x, dy = py - pt.y;
+        const d = Math.sqrt(dx * dx + dy * dy);
+        if (d < best.d) {
+          const next = railPoint(r, Math.min(1, t + 0.01));
+          const tx = next.x - pt.x, ty = next.y - pt.y;
+          const tl = Math.sqrt(tx * tx + ty * ty) || 1;
+          best = { d, x: pt.x, y: pt.y, t, nx: ty / tl, ny: -tx / tl };
+        }
+      }
+      return best;
+    };
+
     const drawSky = (lvl: LevelData, W: number, H: number) => {
       const grad = ctx.createLinearGradient(0, 0, 0, H);
       grad.addColorStop(0, lvl.skyTop);
@@ -542,6 +663,9 @@ export default function Index() {
       // Platforms (sort by y for depth)
       const sorted = [...s.platforms].sort((a, b) => a.y - b.y);
       sorted.forEach(drawPlatform);
+
+      // Rails
+      s.rails.forEach(drawRail);
 
       // Bonuses
       s.bonuses.forEach(b => drawBonus(b, s.frameCount));
@@ -708,6 +832,34 @@ export default function Index() {
           } else if (b.vy < 0) {
             b.y = p.y + p.h + b.r;
             b.vy = 0;
+          }
+        }
+      });
+
+      // Rails — ball rolls on top of rail if close enough
+      s.rails.forEach(r => {
+        const info = distToRail(r, b.x, b.y + b.r);
+        if (info.d < 10 && b.vy >= -1) {
+          // Snap ball to rail top
+          const railPt = info;
+          // Estimate slope direction at contact
+          const ahead = railPoint(r, Math.min(1, info.t + 0.05));
+          const behind = railPoint(r, Math.max(0, info.t - 0.05));
+          const dxs = ahead.x - behind.x;
+          const dys = ahead.y - behind.y;
+          const len = Math.sqrt(dxs * dxs + dys * dys) || 1;
+          const slope = dys / len;
+          // Place ball on rail
+          b.y = railPt.y - b.r;
+          b.vy = 0;
+          b.onGround = true;
+          // Gravity acceleration along rail (slope effect)
+          b.vx += slope * 0.5;
+          if (Math.abs(b.vx) > MAX_SPEED + 3) b.vx = Math.sign(b.vx) * (MAX_SPEED + 3);
+          // Sparks while rolling fast
+          if (Math.abs(b.vx) > 2 && Math.random() < 0.25) {
+            spawnParticles(b.x, b.y + b.r, '#ffe0a8', 1);
+            if (Math.random() < 0.3) audio.tone(800 + Math.random() * 400, 0.03, 'square', 0.05);
           }
         }
       });
